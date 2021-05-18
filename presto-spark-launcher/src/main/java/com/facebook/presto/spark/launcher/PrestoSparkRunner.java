@@ -132,7 +132,7 @@ public class PrestoSparkRunner
                 queryStatusInfoOutputPath,
                 queryDataOutputPath);
 
-        List<List<Object>> results2 = queryExecution.execute();
+        List<List<Object>> results2 = queryExecution2.execute();
 
         System.out.println("Rows: " + results2.size());
         results.forEach(System.out::println);
