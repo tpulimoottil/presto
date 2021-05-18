@@ -30,6 +30,9 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.Path;
 import java.security.Principal;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -101,10 +104,13 @@ public class PrestoSparkRunner
                 catalogSessionProperties,
                 traceToken);
 
+        System.out.println("Query Execution Start 1");
+
+        String tableName1 = "superglue_sandbox.thomas_presto_ctas_1days_" + System.currentTimeMillis();
         IPrestoSparkQueryExecution queryExecution = queryExecutionFactory.create(
                 distribution.getSparkContext(),
                 session,
-                query,
+                testQuery(tableName1).get(),
                 sparkQueueName,
                 new DistributionBasedPrestoSparkTaskExecutorFactoryProvider(distribution),
                 queryStatusInfoOutputPath,
@@ -114,6 +120,81 @@ public class PrestoSparkRunner
 
         System.out.println("Rows: " + results.size());
         results.forEach(System.out::println);
+        System.out.println("Query Execution Completed 1");
+
+        String tableName2 = "superglue_sandbox.thomas_presto_ctas_1days_" + System.currentTimeMillis();
+        IPrestoSparkQueryExecution queryExecution2 = queryExecutionFactory.create(
+                distribution.getSparkContext(),
+                session,
+                testQuery(tableName2).get(),
+                sparkQueueName,
+                new DistributionBasedPrestoSparkTaskExecutorFactoryProvider(distribution),
+                queryStatusInfoOutputPath,
+                queryDataOutputPath);
+
+        List<List<Object>> results2 = queryExecution.execute();
+
+        System.out.println("Rows: " + results2.size());
+        results.forEach(System.out::println);
+        System.out.println("Query Execution Completed 2");
+
+        System.out.println("Connecting to Hive");
+        showTables("drop table " + tableName1);
+        System.out.println("Completed Hive Query");
+
+        System.out.println(tableName2 + " will not be deleted");
+        System.out.println(tableName1 + " will get deleted");
+    }
+    public Optional<String> testQuery(String tableName)
+    {
+        String query = "create table if not exists " + tableName + " as" +
+                " select" +
+                "    c.pseudonym_id" +
+                "  , max(c.event_ts) as event_ts" +
+                "  , max(CASE WHEN c.ui_object_detail = 'businessprofile-tile-screen-multiSelect-0' THEN 1        ELSE 0        END) AS main_source" +
+                "  ,        max(CASE WHEN c.ui_object_detail = 'businessprofile-tile-screen-multiSelect-1' THEN 1        ELSE 0 END) AS side_job" +
+                "    , max(CASE WHEN c.ui_object_detail = 'businessprofile-tile-screen-multiSelect-2' THEN 1 ELSE 0 END) AS business" +
+                "    , max(CASE WHEN c.ui_object_detail = 'businessprofile-tile-screen-multiSelect-3'THEN 1 ELSE 0        END) AS something_else" +
+                "    , max(CASE WHEN c.ui_object_detail = 'businessprofile-startstop-views-0-actions-1'THEN 1 ELSE 0        END) AS click_continue" +
+                "    , max(CASE WHEN screen IN ('businessprofile-tile-screen-view')THEN 1 ELSE 0        END) AS saw_tile_screen" +
+                " from thrive_dwh.cg_turbotax_clickstream c" +
+                " where c.screen in ('businessprofile-tile-screen-view')" +
+                " and concat(YEAR,MONTH,DAY) >=" +
+                "       date_format(" +
+                "        current_timestamp - interval '1' day," +
+                "           '%Y%m%d'" +
+                "        )" +
+                " and event_ts < current_timestamp" +
+                " group by c.pseudonym_id, c.tax_prep_year";
+        System.out.println("Query: " + query);
+        return Optional.of(query);
+    }
+    public void showTables(String query)
+    {
+        Connection con = null;
+        try {
+            String conStr = "jdbc:spark://databricks.data-curation-prd.a.intuit.com:443/default;transportMode=http;ssl=1;httpPath=sql/protocolv1/o/0/0904-214845-gizmo541;AuthMech=3;UID=token;PWD=dapidb7f838a81145ba5f3b67d4c48f85d98";
+            Class.forName("com.simba.spark.jdbc41.Driver");
+            con = DriverManager.getConnection(conStr);
+            Statement stmt = con.createStatement();
+            stmt.executeUpdate(query);
+//            while (showDatabases.next()) {
+//                System.out.println(showDatabases.getString(1));
+//            }
+            //System.out.println("show database successfully.");
+        }
+        catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        finally {
+            try {
+                if (con != null) {
+                    con.close();
+                }
+            }
+            catch (Exception ex) {
+            }
+        }
     }
 
     @Override
